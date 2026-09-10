@@ -24,20 +24,26 @@ export function SessionProvider({ children }: { children: React.ReactNode }): JS
   const [stale, setStale] = useState(false);
 
   const refresh = useCallback(async (): Promise<void> => {
-    try {
-      const [profile, current] = await Promise.all([api.me(), api.myCohort()]);
-      setMe(profile);
-      setCohort(current);
+    // Settled, not all: the cohort request is refused until verification
+    // passes, and losing the profile because of that would hide the very
+    // banner telling you to verify.
+    const [profile, current] = await Promise.allSettled([api.me(), api.myCohort()]);
+
+    if (profile.status === 'fulfilled') setMe(profile.value);
+
+    if (current.status === 'fulfilled') {
+      setCohort(current.value);
       setStale(false);
-      await cacheCohort(current);
-    } catch {
-      // Offline, or the token expired. Fall back to whatever we last saw so the
-      // member can still find the address for tonight.
-      const fallback = await cachedCohort();
-      if (fallback) {
-        setCohort(fallback);
-        setStale(true);
-      }
+      await cacheCohort(current.value);
+      return;
+    }
+
+    // Offline, or the token expired. Fall back to whatever we last saw so the
+    // member can still find the address for tonight.
+    const fallback = await cachedCohort();
+    if (fallback) {
+      setCohort(fallback);
+      setStale(true);
     }
   }, []);
 
